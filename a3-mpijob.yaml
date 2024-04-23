@@ -1,9 +1,10 @@
 apiVersion: kubeflow.org/v2beta1
 kind: MPIJob
 metadata:
-  name: stoelinga-nccl-test-fastrak-5
+  name: ${JOB_NAME}
 spec:
   slotsPerWorker: 1
+  launcherCreationPolicy: "WaitForWorkersReady"
   runPolicy:
     cleanPodPolicy: Running
   mpiReplicaSpecs:
@@ -11,12 +12,9 @@ spec:
       replicas: 1
       template:
           spec:
-            dnsPolicy: ClusterFirstWithHostNet
-            hostNetwork: true
-            hostPID: true
-            hostIPC: true
+            restartPolicy: OnFailure
             containers:
-            - image: gcr.io/supercomputer-testing/stoelinga-nccl-tests
+            - image: "${IMAGE}"
               name: nccl
               securityContext:
                 privileged: true
@@ -25,39 +23,68 @@ spec:
                 value: "1"
               - name: OMPI_ALLOW_RUN_AS_ROOT_CONFIRM
                 value: "1"
-             # - name: OMPI_MCA_btl_tcp_if_include
-             #   value: "eth0"
-             # - name: OMPI_MCA_btl_tcp_if_exclude
-             #   value: "eth1,eth2,eth3,eth4,eth5,eth6,eth7"
+              - name: OMPI_MCA_orte_base_help_aggregate
+                value: "0"
+              # - name: OMPI_MCA_btl_tcp_if_include
+              #   value: "eth0"
+              # - name: OMPI_MCA_btl_tcp_if_exclude
+              #   value: "eth1,eth2,eth3,eth4,eth5,eth6,eth7"
               # Uncomment to be able to exec in to launcher pod for interactive testing
               # command: ['sleep', '86400']
               command: ["/bin/bash", "-c"]
               args:
               - |
-                export OMPI_NCCL_DEBUG_SUBSYS=INIT,GRAPH,ENV,TUNING,NET,VERSION
-                export OMPI_NCCL_DEBUG=${NCCL_DEBUG:-INFO}
-                export OMPI_NCCL_FASTRAK_ENABLE_HOTPATH_LOGGING=0
-                export OMPI_NCCL_FASTRAK_USE_SNAP=1
-                export OMPI_NCCL_FASTRAK_NUM_FLOWS=2
-                export OMPI_NCCL_FASTRAK_ENABLE_CONTROL_CHANNEL=0
-                export OMPI_NCCL_FASTRAK_DATA_TRANSFER_SLOWNESS_MS=1000
-                export OMPI_LD_LIBRARY_PATH="/usr/local/fastrak/lib64:${LD_LIBRARY_PATH}"
-                export OMPI_NCCL_FASTRAK_CTRL_DEV=eth0
-                export OMPI_NCCL_FASTRAK_IFNAME=eth1,eth2,eth3,eth4,eth5,eth6,eth7,eth8
-                export OMPI_NCCL_SOCKET_IFNAME=eth0
-                export OMPI_NCCL_CROSS_NIC=0
-                export OMPI_NCCL_ALGO=Ring,Tree
-                export OMPI_NCCL_PROTO=Simple
-                export OMPI_NCCL_MIN_NCHANNELS=4
-                export OMPI_NCCL_DYNAMIC_CHUNK_SIZE=524288
-                export OMPI_NCCL_P2P_NET_CHUNKSIZE=524288
-                export OMPI_NCCL_P2P_PCI_CHUNKSIZE=524288
-                export OMPI_NCCL_P2P_NVL_CHUNKSIZE=1048576
-                export OMPI_NCCL_BUFFSIZE=8388608
-                export OMPI_CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-                export OMPI_NCCL_NET_GDR_LEVEL=PIX
+                set -xe
+                export NCCL_DEBUG_SUBSYS=INIT,GRAPH,ENV,TUNING,NET,VERSION
+                export NCCL_DEBUG=INFO
+                export NCCL_FASTRAK_ENABLE_HOTPATH_LOGGING=0
+                export NCCL_FASTRAK_USE_SNAP=1
+                export NCCL_FASTRAK_NUM_FLOWS=2
+                export NCCL_FASTRAK_ENABLE_CONTROL_CHANNEL=0
+                export NCCL_FASTRAK_DATA_TRANSFER_SLOWNESS_MS=1000
+                export LD_LIBRARY_PATH="/usr/local/tcpx/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}"
+                export NCCL_FASTRAK_CTRL_DEV=eth0
+                export NCCL_FASTRAK_IFNAME=eth1,eth2,eth3,eth4,eth5,eth6,eth7,eth8
+                export NCCL_SOCKET_IFNAME=eth0
+                export NCCL_CROSS_NIC=0
+                export NCCL_ALGO=Ring,Tree
+                export NCCL_PROTO=Simple
+                export NCCL_MIN_NCHANNELS=16
+                export NCCL_DYNAMIC_CHUNK_SIZE=524288
+                export NCCL_P2P_NET_CHUNKSIZE=524288
+                export NCCL_P2P_PCI_CHUNKSIZE=524288
+                export NCCL_P2P_NVL_CHUNKSIZE=1048576
+                export NCCL_BUFFSIZE=8388608
+                export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+                export NCCL_NET_GDR_LEVEL=PIX
+                mkdir -p /data/${JOB_NAME}
+                gcloud auth list
+                sleep 120
                 mpirun -np 4 -bind-to none \
-                    /opt/nccl_tests/build/all_reduce_perf -b 8 -e 16G -f 4 -g 8 -n 10 #-n 200 #-w 2 -n 20
+                    -x NCCL_DEBUG_SUBSYS \
+                    -x NCCL_DEBUG \
+                    -x NCCL_FASTRAK_ENABLE_HOTPATH_LOGGING \
+                    -x NCCL_FASTRAK_USE_SNAP \
+                    -x NCCL_FASTRAK_NUM_FLOWS \
+                    -x NCCL_FASTRAK_ENABLE_CONTROL_CHANNEL \
+                    -x NCCL_FASTRAK_DATA_TRANSFER_SLOWNESS_MS \
+                    -x LD_LIBRARY_PATH \
+                    -x NCCL_FASTRAK_CTRL_DEV \
+                    -x NCCL_FASTRAK_IFNAME \
+                    -x NCCL_SOCKET_IFNAME \
+                    -x NCCL_CROSS_NIC \
+                    -x NCCL_ALGO \
+                    -x NCCL_PROTO \
+                    -x NCCL_MIN_NCHANNELS \
+                    -x NCCL_DYNAMIC_CHUNK_SIZE \
+                    -x NCCL_P2P_NET_CHUNKSIZE \
+                    -x NCCL_P2P_PCI_CHUNKSIZE \
+                    -x NCCL_P2P_NVL_CHUNKSIZE \
+                    -x NCCL_BUFFSIZE \
+                    -x CUDA_VISIBLE_DEVICES \
+                    -x NCCL_NET_GDR_LEVEL \
+                    /opt/nccl_tests/build/all_reduce_perf -b 8 -e 16G -f 4 -g 8 -n 10 2>&1 | tee /data/${JOB_NAME}/nccl-test.log 
+                    gsutil cp /data/${JOB_NAME}/nccl-test.log gs://${BUCKET_NAME}/${JOB_NAME}-nccl-test.log
               resources:
                 requests:
                   cpu: 50m
@@ -68,11 +95,33 @@ spec:
     Worker:
       replicas: 4
       template:
+        metadata:
+          annotations:
+            networking.gke.io/default-interface: 'eth0'
+            networking.gke.io/interfaces: |
+              [
+                {"interfaceName":"eth0","network":"default"},
+                {"interfaceName":"eth1","network":"vpc1"},
+                {"interfaceName":"eth2","network":"vpc2"},
+                {"interfaceName":"eth3","network":"vpc3"},
+                {"interfaceName":"eth4","network":"vpc4"},
+                {"interfaceName":"eth5","network":"vpc5"},
+                {"interfaceName":"eth6","network":"vpc6"},
+                {"interfaceName":"eth7","network":"vpc7"},
+                {"interfaceName":"eth8","network":"vpc8"}
+              ]
+            devices.gke.io/container.tcpx-daemon: |
+                  - path: /dev/nvidia0
+                  - path: /dev/nvidia1
+                  - path: /dev/nvidia2
+                  - path: /dev/nvidia3
+                  - path: /dev/nvidia4
+                  - path: /dev/nvidia5
+                  - path: /dev/nvidia6
+                  - path: /dev/nvidia7
+                  - path: /dev/nvidiactl
+                  - path: /dev/nvidia-uvm
         spec:
-          dnsPolicy: ClusterFirstWithHostNet
-          hostNetwork: true
-          hostPID: true
-          hostIPC: true
           volumes:
           - name: nvidia-install-dir-host
             hostPath:
@@ -113,7 +162,7 @@ spec:
                 cp -r /var/lib/tcpxo/lib64/. /usr/lib/tcpx/lib64
                 echo "installation finishes"
           containers:
-          - image: gcr.io/supercomputer-testing/stoelinga-nccl-tests
+          - image: "${IMAGE}"
             name: nccl
             # restartPolicy: Always
             # command: ['sleep', '86400']
@@ -146,7 +195,7 @@ spec:
               - |
                 set -ex
                 chmod 755 /fts/entrypoint_rxdm_container.sh
-                /fts/entrypoint_rxdm_container.sh --num_hops=2 --num_nics=8 --uid= --alsologtostderr &
+                /fts/entrypoint_rxdm_container.sh --enforce_kernel_ipv6_support=false --num_hops=2 --num_nics=8 --uid= --alsologtostderr &
                 while [ ! -e "/run/tcpx/workload_terminated" ]; do sleep 10; echo "sleeping"; done
 
             securityContext:
@@ -156,6 +205,7 @@ spec:
                   - SYS_ADMIN
                   - SYS_PTRACE
                   - IPC_LOCK
+                  - NET_ADMIN
             volumeMounts:
               - name: nvidia-install-dir-host
                 mountPath: /usr/local/nvidia/lib64
