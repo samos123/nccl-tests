@@ -1,0 +1,169 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: stoelinga-nccl-test-fastrak-5
+spec:
+  slotsPerWorker: 1
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+          spec:
+            dnsPolicy: ClusterFirstWithHostNet
+            hostNetwork: true
+            hostPID: true
+            hostIPC: true
+            containers:
+            - image: gcr.io/supercomputer-testing/stoelinga-nccl-tests
+              name: nccl
+              securityContext:
+                privileged: true
+              env:
+              - name: OMPI_ALLOW_RUN_AS_ROOT
+                value: "1"
+              - name: OMPI_ALLOW_RUN_AS_ROOT_CONFIRM
+                value: "1"
+             # - name: OMPI_MCA_btl_tcp_if_include
+             #   value: "eth0"
+             # - name: OMPI_MCA_btl_tcp_if_exclude
+             #   value: "eth1,eth2,eth3,eth4,eth5,eth6,eth7"
+              # Uncomment to be able to exec in to launcher pod for interactive testing
+              # command: ['sleep', '86400']
+              command: ["/bin/bash", "-c"]
+              args:
+              - |
+                export OMPI_NCCL_DEBUG_SUBSYS=INIT,GRAPH,ENV,TUNING,NET,VERSION
+                export OMPI_NCCL_DEBUG=${NCCL_DEBUG:-INFO}
+                export OMPI_NCCL_FASTRAK_ENABLE_HOTPATH_LOGGING=0
+                export OMPI_NCCL_FASTRAK_USE_SNAP=1
+                export OMPI_NCCL_FASTRAK_NUM_FLOWS=2
+                export OMPI_NCCL_FASTRAK_ENABLE_CONTROL_CHANNEL=0
+                export OMPI_NCCL_FASTRAK_DATA_TRANSFER_SLOWNESS_MS=1000
+                export OMPI_LD_LIBRARY_PATH="/usr/local/fastrak/lib64:${LD_LIBRARY_PATH}"
+                export OMPI_NCCL_FASTRAK_CTRL_DEV=eth0
+                export OMPI_NCCL_FASTRAK_IFNAME=eth1,eth2,eth3,eth4,eth5,eth6,eth7,eth8
+                export OMPI_NCCL_SOCKET_IFNAME=eth0
+                export OMPI_NCCL_CROSS_NIC=0
+                export OMPI_NCCL_ALGO=Ring,Tree
+                export OMPI_NCCL_PROTO=Simple
+                export OMPI_NCCL_MIN_NCHANNELS=4
+                export OMPI_NCCL_DYNAMIC_CHUNK_SIZE=524288
+                export OMPI_NCCL_P2P_NET_CHUNKSIZE=524288
+                export OMPI_NCCL_P2P_PCI_CHUNKSIZE=524288
+                export OMPI_NCCL_P2P_NVL_CHUNKSIZE=1048576
+                export OMPI_NCCL_BUFFSIZE=8388608
+                export OMPI_CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+                export OMPI_NCCL_NET_GDR_LEVEL=PIX
+                mpirun -np 4 -bind-to none \
+                    /opt/nccl_tests/build/all_reduce_perf -b 8 -e 16G -f 4 -g 8 -n 10 #-n 200 #-w 2 -n 20
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+       
+            enableServiceLinks: false
+            automountServiceAccountToken: false
+    Worker:
+      replicas: 4
+      template:
+        spec:
+          dnsPolicy: ClusterFirstWithHostNet
+          hostNetwork: true
+          hostPID: true
+          hostIPC: true
+          volumes:
+          - name: nvidia-install-dir-host
+            hostPath:
+              path: /home/kubernetes/bin/nvidia/lib64
+          - name: tcpx-socket
+            emptyDir: {}
+          - name: shared-memory
+            emptyDir:
+              medium: "Memory"
+              sizeLimit: 250Gi
+          - name: tcpx-nccl-plugin-volume
+            emptyDir: {}
+
+          initContainers:
+          - name: nccl-tcpxo-installer
+            # image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-nightly-cuda12.0:2024_03_04
+            # image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-nightly-cuda12.0:2024_03_22-tcpxo
+            # image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-nightly-cuda12.0:2024_03_24-tcpxo
+            # image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-nightly-cuda12.0:2024_02_13
+            # image: us-docker.pkg.dev/kernel-net-team/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-pre-test-cuda12.0:cl_621337786
+            # image: us-docker.pkg.dev/kernel-net-team/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-pre-test-cuda12.0:cl_623310826
+            image: us-docker.pkg.dev/kernel-net-team/gpudirect-tcpx/nccl-plugin-gpudirecttcpx-pre-test-cuda12.0:cl_624969542
+            resources:
+              requests:
+                cpu: 150m
+            securityContext:
+              privileged: true
+            volumeMounts:
+              - name: tcpx-nccl-plugin-volume
+                mountPath: /var/lib/tcpx
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                set -ex
+                chmod 755 /scripts/container_entry.sh
+                /scripts/container_entry.sh install
+                mkdir -p /usr/lib/tcpx/lib64
+                cp -r /var/lib/tcpxo/lib64/. /usr/lib/tcpx/lib64
+                echo "installation finishes"
+          containers:
+          - image: gcr.io/supercomputer-testing/stoelinga-nccl-tests
+            name: nccl
+            # restartPolicy: Always
+            # command: ['sleep', '86400']
+            securityContext:
+              privileged: true
+            resources:
+              requests:
+                cpu: 50
+                memory: 500Gi
+                nvidia.com/gpu: 8
+              limits:
+                nvidia.com/gpu: 8
+            volumeMounts:
+              - name: nvidia-install-dir-host
+                mountPath: /usr/local/nvidia/lib64
+              - name: tcpx-nccl-plugin-volume
+                mountPath: /usr/local/tcpx
+              - name: tcpx-socket
+                mountPath: /run/tcpx
+              - name: shared-memory
+                mountPath: /dev/shm
+
+          - name: fastrak-daemon
+            # image: us-docker.pkg.dev/tcpfastrak-staging/fastrak-guest-image-multi-region/fastrak-rxdm:v1.0.2
+            # image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.6 
+            image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.6-sctp
+            imagePullPolicy: Always
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                set -ex
+                chmod 755 /fts/entrypoint_rxdm_container.sh
+                /fts/entrypoint_rxdm_container.sh --num_hops=2 --num_nics=8 --uid= --alsologtostderr &
+                while [ ! -e "/run/tcpx/workload_terminated" ]; do sleep 10; echo "sleeping"; done
+
+            securityContext:
+              privileged: true
+              capabilities:
+                add:
+                  - SYS_ADMIN
+                  - SYS_PTRACE
+                  - IPC_LOCK
+            volumeMounts:
+              - name: nvidia-install-dir-host
+                mountPath: /usr/local/nvidia/lib64
+              - name: tcpx-socket
+                mountPath: /run/tcpx
+            env:
+              - name: LD_LIBRARY_PATH
+                value: /usr/local/nvidia/lib64
+
+          enableServiceLinks: false
+          automountServiceAccountToken: false
