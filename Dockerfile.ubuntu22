@@ -1,9 +1,9 @@
-ARG CUDA_VERSION_MINOR=12.2.2
-ARG BASE_IMAGE=nvidia/cuda:${CUDA_VERSION_MINOR}-cudnn8-devel-ubuntu22.04
+ARG CUDA_VERSION_MINOR=12.4.1
+ARG BASE_IMAGE=nvidia/cuda:${CUDA_VERSION_MINOR}-devel-ubuntu22.04
 FROM ${BASE_IMAGE} as base
 
-ARG CUDA_VERSION_MAJOR=12.2
-ARG TARGET_NCCL_VERSION=2.19.3-1
+ARG CUDA_VERSION_MAJOR=12.4
+ARG TARGET_NCCL_VERSION=2.21.5-1
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get -qq update && \
@@ -45,18 +45,6 @@ RUN mkdir /tmp/build && \
     ./autogen.sh && \
     ./configure CUDA_H_PATH=/usr/local/cuda/include/cuda.h && \
     make -j20 install && \
-    cd /tmp && \
-    rm -r /tmp/build
-
-# Build GPU Bandwidthtest from samples
-ARG CUDA_SAMPLES_VERSION
-RUN mkdir /tmp/build && \
-    cd /tmp/build && \
-    curl -sLo master.zip https://github.com/NVIDIA/cuda-samples/archive/refs/tags/v${CUDA_SAMPLES_VERSION}.zip && \
-    unzip master.zip && \
-    cd cuda-samples-${CUDA_SAMPLES_VERSION}/Samples/1_Utilities/bandwidthTest && \
-    make -j20 && \
-    install bandwidthTest /usr/bin/ && \
     cd /tmp && \
     rm -r /tmp/build
 
@@ -198,4 +186,6 @@ RUN ldconfig
 RUN sed -i 's/[ #]\(.*StrictHostKeyChecking \).*/ \1no/g' /etc/ssh/ssh_config && \
     echo "    UserKnownHostsFile /dev/null" >> /etc/ssh/ssh_config && \
     sed -i 's/#\(StrictModes \).*/\1no/g' /etc/ssh/sshd_config && \
+    sed -i "s/[ #]\(.*Port \).*/ \12222/g" /etc/ssh/ssh_config && \
+    sed -i "s/#\(Port \).*/\12222/g" /etc/ssh/sshd_config && \
     mkdir /var/run/sshd -p
