@@ -49,7 +49,7 @@ spec:
                 export NCCL_CROSS_NIC=0
                 export NCCL_ALGO=Ring,Tree
                 export NCCL_PROTO=Simple
-                export NCCL_MIN_NCHANNELS=16
+                export NCCL_MIN_NCHANNELS=4
                 export NCCL_DYNAMIC_CHUNK_SIZE=524288
                 export NCCL_P2P_NET_CHUNKSIZE=524288
                 export NCCL_P2P_PCI_CHUNKSIZE=524288
@@ -60,7 +60,7 @@ spec:
                 mkdir -p /data/${JOB_NAME}
                 gcloud auth list
                 sleep 120
-                mpirun -np 4 -bind-to none \
+                mpirun -np ${NUM_NODES} -bind-to none \
                     -x NCCL_DEBUG_SUBSYS \
                     -x NCCL_DEBUG \
                     -x NCCL_FASTRAK_ENABLE_HOTPATH_LOGGING \
@@ -93,7 +93,7 @@ spec:
             enableServiceLinks: false
             automountServiceAccountToken: false
     Worker:
-      replicas: 4
+      replicas: ${NUM_NODES}
       template:
         metadata:
           annotations:
@@ -122,6 +122,8 @@ spec:
                   - path: /dev/nvidiactl
                   - path: /dev/nvidia-uvm
         spec:
+          # nodeSelector:
+          #   cloud.google.com/gke-nodepool: np-4
           volumes:
           - name: nvidia-install-dir-host
             hostPath:
