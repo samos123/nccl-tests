@@ -7,6 +7,7 @@ spec:
   launcherCreationPolicy: "WaitForWorkersReady"
   runPolicy:
     cleanPodPolicy: Running
+    activeDeadlineSeconds: 666
   mpiReplicaSpecs:
     Launcher:
       replicas: 1
@@ -39,7 +40,8 @@ spec:
                 export NCCL_DEBUG=INFO
                 export NCCL_FASTRAK_ENABLE_HOTPATH_LOGGING=0
                 export NCCL_FASTRAK_USE_SNAP=1
-                export NCCL_FASTRAK_NUM_FLOWS=2
+                export NCCL_FASTRAK_NUM_FLOWS=8
+                export NCCL_FASTRAK_USE_LLCM=1
                 export NCCL_FASTRAK_ENABLE_CONTROL_CHANNEL=0
                 export NCCL_FASTRAK_DATA_TRANSFER_SLOWNESS_MS=1000
                 export LD_LIBRARY_PATH="/usr/local/tcpx/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}"
@@ -59,7 +61,7 @@ spec:
                 export NCCL_NET_GDR_LEVEL=PIX
                 mkdir -p /data/${JOB_NAME}
                 gcloud auth list
-                sleep 120
+                until mpirun -np ${NUM_NODES} -x LD_LIBRARY_PATH -bind-to none /usr/local/nvidia/bin/nvidia-smi; do sleep 5; done
                 mpirun -np ${NUM_NODES} -bind-to none \
                     -x NCCL_DEBUG_SUBSYS \
                     -x NCCL_DEBUG \
@@ -83,7 +85,7 @@ spec:
                     -x NCCL_BUFFSIZE \
                     -x CUDA_VISIBLE_DEVICES \
                     -x NCCL_NET_GDR_LEVEL \
-                    /opt/nccl_tests/build/all_reduce_perf -b 8 -e 16G -f 4 -g 8 -n 10 2>&1 | tee /data/${JOB_NAME}/nccl-test.log 
+                    /opt/nccl_tests/build/all_reduce_perf -b 8 -e 16G -f 4 -g 8 -n 10 2>&1 | tee /data/${JOB_NAME}/nccl-test.log
                     gsutil cp /data/${JOB_NAME}/nccl-test.log gs://${BUCKET_NAME}/${JOB_NAME}-nccl-test.log
               resources:
                 requests:
